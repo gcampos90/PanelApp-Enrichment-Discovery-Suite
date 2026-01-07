@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>PanelApp / HPO / GO Tools — Shiny App</title>
+  <meta name="description" content="A Shiny (R) application for PanelApp gene enrichment, discovery panels (HPO/GO/gene list), and network exploration." />
+  <style>
+    :root { --bg:#0b0f19; --card:#121a2a; --text:#e8eefc; --muted:#a9b4d0; --accent:#7aa2ff; --border:rgba(255,255,255,.08); }
+    body { margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+           background: radial-gradient(1200px 600px at 20% -10%, rgba(122,162,255,.25), transparent 60%),
+                       radial-gradient(900px 500px at 100% 0%, rgba(124,255,203,.12), transparent 50%),
+                       var(--bg);
+           color:var(--text); }
+    header { padding: 56px 20px 24px; max-width: 980px; margin: 0 auto; }
+    h1 { font-size: 2.1rem; margin:0 0 10px; letter-spacing: .2px; }
+    p { color: var(--muted); line-height: 1.6; margin: 0 0 12px; }
+    .wrap { max-width: 980px; margin: 0 auto; padding: 0 20px 56px; }
+    .grid { display:grid; grid-template-columns: 1fr; gap: 16px; }
+    @media (min-width: 860px) { .grid { grid-template-columns: 1.15fr .85fr; } }
+    .card { background: rgba(18,26,42,.92); border:1px solid var(--border); border-radius: 16px; padding: 18px 18px; box-shadow: 0 10px 30px rgba(0,0,0,.25); }
+    .card h2 { font-size: 1.15rem; margin:0 0 10px; }
+    code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace; }
+    pre { background: rgba(0,0,0,.35); border: 1px solid var(--border); border-radius: 12px; padding: 14px; overflow:auto; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .btnrow { display:flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+    .btn { display:inline-block; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--border);
+           background: rgba(255,255,255,.06); color: var(--text); }
+    .btn:hover { background: rgba(255,255,255,.10); }
+    .note { font-size: .92rem; color: var(--muted); }
+    .kvs { display:grid; grid-template-columns: 140px 1fr; gap: 10px 12px; margin: 10px 0 0; }
+    .kvs div { padding: 8px 10px; background: rgba(255,255,255,.04); border:1px solid var(--border); border-radius: 12px; }
+    footer { max-width: 980px; margin: 0 auto; padding: 0 20px 24px; color: var(--muted); font-size: .9rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>PanelApp / HPO / GO Tools — Shiny (R) App</h1>
+    <p>
+      This repository contains an <strong>R Shiny</strong> application for:
+      (1) PanelApp gene enrichment, (2) discovery panels from HPO / gene lists / GO keywords, and
+      (3) a gene-based network explorer (HPO / GO / PanelApp phenotypes).
+    </p>
+    <p class="note">
+      <strong>Note:</strong> Shiny apps are not static HTML pages. GitHub Pages can host this landing page,
+      but the interactive app must be run via R (locally) or hosted on a Shiny service (e.g., shinyapps.io,
+      Shiny Server, Posit Connect, or a Docker deployment).
+    </p>
+  </header>
+
+  <div class="wrap">
+    <div class="grid">
+      <section class="card">
+        <h2>Run locally</h2>
+        <p>Clone the repo and run the app from R/RStudio:</p>
+        <pre><code>git clone &lt;YOUR_GITHUB_REPO_URL&gt;
+cd &lt;REPO_FOLDER&gt;
+
+# In R:
+install.packages(c("shiny","shinyjs","shinybusy","tidyverse","DT","visNetwork",
+                   "httr","jsonlite","readxl","writexl","pheatmap","matrixStats",
+                   "ggVennDiagram","conflicted","fgsea","msigdbr"))
+shiny::runApp()</code></pre>
+
+        <div class="btnrow">
+          <a class="btn" href="./app.R">View app.R</a>
+          <a class="btn" href="./README.html">Project README (HTML)</a>
+        </div>
+      </section>
+
+      <aside class="card">
+        <h2>Host the app (recommended)</h2>
+        <p>To make the app accessible from a browser, deploy it to a Shiny host.</p>
+
+        <div class="kvs">
+          <div><strong>shinyapps.io</strong></div>
+          <div>Quickest hosted option for personal projects.</div>
+
+          <div><strong>Docker</strong></div>
+          <div>Good for reproducible deployments and servers.</div>
+
+          <div><strong>Shiny Server</strong></div>
+          <div>Self-hosted, runs on a Linux server/VM.</div>
+        </div>
+
+        <p style="margin-top:12px" class="note">
+          Once hosted, you can link it here (and optionally embed it with an iframe).
+        </p>
+
+        <!-- Optional embed (replace URL after deployment):
+        <h3 style="margin:14px 0 8px;font-size:1.05rem;">Live app</h3>
+        <iframe
+          src="https://YOUR-DEPLOYED-APP-URL"
+          style="width:100%;height:760px;border:1px solid var(--border);border-radius:12px;"
+          loading="lazy"
+        ></iframe>
+        -->
+      </aside>
+    </div>
+
+    <section class="card" style="margin-top:16px;">
+      <h2>How to use on GitHub</h2>
+      <p>
+        You can upload <code>app.R</code> + this <code>index.html</code> to your repo.
+        If you enable <strong>GitHub Pages</strong>, it will serve this landing page.
+        The interactive Shiny app still needs hosting (see above).
+      </p>
+      <p class="note">
+        Tip: After you deploy the app (e.g., shinyapps.io), paste the URL into the iframe section above.
+      </p>
+    </section>
+  </div>
+
+  <footer>
+    <div>Generated landing page for an R Shiny project. © <span id="y"></span></div>
+  </footer>
+  <script>document.getElementById("y").textContent = new Date().getFullYear();</script>
+</body>
+</html>
