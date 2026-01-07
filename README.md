@@ -1,4 +1,4 @@
-# PanelApp Explorer (Shiny)
+# PanelApp-Enrichment-Discovery-Suite (Shiny)
 
 A multi-tab **R Shiny** application for:
 - **Panel enrichment** of a user gene list against **Genomics England PanelApp** panels (Fisher’s exact test + FDR),
