@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PanelApp–HPO–Discovery Suite (Tabs 2/5/6) — Architecture & Code Guide</title>
+  <style>
+    :root{
+      --bg:#0b1020; --panel:#111a33; --text:#e9eefc; --muted:#b7c2e6;
+      --border:rgba(255,255,255,.10); --code:#0a0f1f; --accent:#7aa2ff;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      --sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Noto Sans", sans-serif;
+    }
+    body{margin:0;font-family:var(--sans);background:var(--bg);color:var(--text);line-height:1.55}
+    .wrap{max-width:1180px;margin:0 auto;padding:28px 18px 70px}
+    header{border:1px solid var(--border);border-radius:16px;padding:20px;background:rgba(255,255,255,.03)}
+    h1{margin:0 0 6px;font-size:28px}
+    .meta{color:var(--muted);font-size:14px;display:flex;gap:10px;flex-wrap:wrap}
+    .pill{border:1px solid var(--border);border-radius:999px;padding:6px 10px;background:rgba(255,255,255,.03)}
+    .grid{display:grid;grid-template-columns:320px 1fr;gap:18px;margin-top:18px;align-items:start}
+    nav{position:sticky;top:16px;border:1px solid var(--border);border-radius:14px;padding:14px;background:rgba(255,255,255,.03)}
+    nav h2{margin:0 0 8px;font-size:14px;color:var(--muted);text-transform:uppercase}
+    nav ul{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:6px}
+    nav a{display:block;padding:8px 10px;border-radius:10px;color:var(--text);text-decoration:none}
+    nav a:hover{background:rgba(122,162,255,.10)}
+    main{border:1px solid var(--border);border-radius:16px;padding:20px;background:rgba(255,255,255,.02)}
+    section{padding:6px 0 18px;border-bottom:1px solid rgba(255,255,255,.06)}
+    section:last-child{border-bottom:none}
+    h2{margin:10px 0 8px;font-size:20px}
+    h3{margin:14px 0 6px;font-size:16px;color:var(--muted)}
+    h4{margin:12px 0 6px;font-size:14px;color:var(--muted)}
+    pre{margin:10px 0;padding:12px 14px;border-radius:14px;background:var(--code);border:1px solid rgba(255,255,255,.10);overflow:auto}
+    code{font-family:var(--mono);font-size:12.5px;color:#dbe6ff}
+    .callout{border:1px solid rgba(122,162,255,.25);border-radius:14px;padding:12px 14px;background:rgba(122,162,255,.08);color:var(--muted)}
+    .kvs{display:grid;grid-template-columns:220px 1fr;gap:8px 14px;margin:10px 0}
+    .kvs div{padding:8px 10px;border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(255,255,255,.02)}
+    .k{color:var(--muted)}
+    @media (max-width:980px){.grid{grid-template-columns:1fr} nav{position:relative;top:auto}}
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <header>
+      <h1>PanelApp–HPO–Discovery Suite (Tabs 2 / 5 / 6)</h1>
+      <div class="meta">
+        <span class="pill"><b>Type:</b> R Shiny (single-file app.R style)</span>
+        <span class="pill"><b>Scope documented:</b> Tab 2, Tab 5, Tab 6 + shared caches/helpers</span>
+        <span class="pill"><b>External services:</b> PanelApp API v1, MSigDB via msigdbr, HPO genes_to_phenotype</span>
+      </div>
+      <div class="callout" style="margin-top:12px">
+        <b>What this app does:</b> Provides three tools:
+        <ul style="margin:8px 0 0 18px">
+          <li><b>Tab 2:</b> Gene list enrichment vs PanelApp panels + volcano/heatmaps + optional GSEA (fgsea + msigdbr).</li>
+          <li><b>Tab 5:</b> “Discovery panel” builder from HPO input, gene-list input, or GO keyword search (local GO.db/org.Hs.eg.db), annotated with PanelApp (and PanelApp phenotypes).</li>
+          <li><b>Tab 6:</b> Network explorer for shared HPOs / PanelApp phenotype terms / GO terms across multiple genes, rendered with visNetwork and scored with igraph metrics.</li>
+        </ul>
+      </div>
+    </header>
+
+    <div class="grid">
+      <nav aria-label="Table of contents">
+        <h2>Contents</h2>
+        <ul>
+          <li><a href="#intro">1. Overview</a></li>
+          <li><a href="#top">2. TOP: Packages, Options, Tiny Helpers</a></li>
+          <li><a href="#cache">3. Universal PanelApp Cache Layer</a></li>
+          <li><a href="#ui">4. UI Structure (Tabs 2/5/6)</a></li>
+          <li><a href="#helpers">5. Helper Functions</a></li>
+          <li><a href="#server">6. Server Logic</a></li>
+          <li><a href="#flows">7. Data Flow Maps</a></li>
+          <li><a href="#ops">8. Operational Notes & Gotchas</a></li>
+        </ul>
+      </nav>
+
+      <main>
+        <section id="intro">
+          <h2>1. Overview</h2>
+          <p>
+            This is a single Shiny app combining enrichment, discovery panel construction, and network exploration.
+            It relies heavily on a <b>shared PanelApp cache layer</b> so repeated analyses avoid refetching the same
+            panel + gene data.
+          </p>
+
+          <div class="kvs">
+            <div class="k"><b>PanelApp API base</b></div><div><code>https://panelapp.genomicsengland.co.uk/api/v1</code></div>
+            <div class="k"><b>Cache directory</b></div><div><code>tools::R_user_dir("PanelApp-HPO-Predict", which="cache")/panelapp</code></div>
+            <div class="k"><b>Panel “confidence” modes</b></div>
+            <div>
+              <b>CL=3</b> (Green only) vs <b>CL≥2</b> (Green + Amber)<br/>
+              Stored separately on disk as <code>panel_genes_CL3.rds</code> and <code>panel_genes_CL2.rds</code>.
+            </div>
+          </div>
+
+          <div class="callout">
+            <b>Important:</b> Your UI labels call Tab 2 file input <code>gene_file_tab3</code> (legacy naming),
+            but it is used as the gene upload for the Tab 2 enrichment tool.
+          </div>
+        </section>
+
+        <section id="top">
+          <h2>2. TOP: Packages, Options, Tiny Helpers</h2>
+
+          <h3>2.1 Install-once guards + conflict resolution</h3>
+          <p>
+            The app contains installation guards for several packages and uses <code>conflicted</code> to prefer
+            specific functions (e.g., <code>dplyr::filter</code>).
+          </p>
+          <pre><code>// Examples
+if (!requireNamespace("ggVennDiagram", quietly=TRUE)) install.packages("ggVennDiagram")
+if (requireNamespace("conflicted", quietly=TRUE)) conflicted::conflicts_prefer(base::setdiff)
+conflict_prefer("filter", "dplyr")</code></pre>
+
+          <h3>2.2 Global options</h3>
+          <pre><code>options(warn = 0)
+options(shiny.maxRequestSize = 50 * 1024^2)</code></pre>
+
+          <h3>2.3 Global tiny helpers (idempotent)</h3>
+          <pre><code>`%||%` <- function(a, b) if (!is.null(a)) a else b
+TRIM  <- function(x) trimws(as.character(x))</code></pre>
+
+          <div class="callout">
+            <b>Design intent:</b> Helpers are defined with <code>if (!exists(...))</code> so repeated sourcing doesn’t break.
+          </div>
+        </section>
+
+        <section id="cache">
+          <h2>3. Universal PanelApp Cache Layer</h2>
+
+          <p>
+            This is the shared backbone for all tabs. It provides:
+            <b>(1) resilient HTTP fetching</b>, <b>(2) pagination</b>, <b>(3) disk + in-memory caching</b>,
+            and <b>(4) derived indexes</b> used by Tabs 2/5/6.
+          </p>
+
+          <h3>3.1 Cache objects and paths</h3>
+          <pre><code>PA_BASE  <- "https://panelapp.genomicsengland.co.uk/api/v1"
+CACHE_DIR <- tools::R_user_dir("PanelApp-HPO-Predict", which="cache")/panelapp
+PANELAPP_CACHE_ENV <- new.env(parent = emptyenv())
+
+cache_path_panel_genes(min_conf=2/3)         -> panel_genes_CL2.rds / panel_genes_CL3.rds
+cache_path_gene_panel_index()                -> gene_panel_index_from_panelgenes.rds
+cache_path_gene_panel_pheno_long()           -> gene_panel_phenotypes_long.rds</code></pre>
+
+          <h3>3.2 HTTP utilities</h3>
+          <h4>pa_get_with_retry()</h4>
+          <ul>
+            <li>Retries on network errors, HTTP 429, and 5xx errors</li>
+            <li>Exponential backoff + jitter</li>
+            <li>Uses <code>httr::timeout(60)</code></li>
+          </ul>
+
+          <h4>fetch_all_pages_retry()</h4>
+          <ul>
+            <li>Calls a paginated endpoint until <code>next</code> is empty</li>
+            <li>Collects <code>results</code> into one tibble</li>
+            <li>Short sleep between pages to reduce API pressure</li>
+          </ul>
+
+          <h3>3.3 Panel and gene retrieval</h3>
+          <h4>get_all_panels_min()</h4>
+          <ul>
+            <li>Fetches <code>/panels/</code> and returns <code>(id, name)</code></li>
+            <li>Defensive column detection (id/name variants)</li>
+          </ul>
+
+          <h4>get_panel_genes(panel_id, include_amber)</h4>
+          <ul>
+            <li>Calls <code>/panels/{id}/genes/?confidence_level=2|3</code></li>
+            <li>Extracts gene symbols from several possible fields</li>
+            <li>Normalizes: upper-case + trim + unique + non-empty</li>
+          </ul>
+
+          <h3>3.4 Fallback cache builder (panel → genes)</h3>
+          <p>
+            <code>get_panel_genes_fallback_conf(min_conf)</code> is the central builder:
+          </p>
+          <ol>
+            <li><b>Memory hit:</b> return from <code>PANELAPP_CACHE_ENV</code> if present</li>
+            <li><b>Disk hit:</b> load <code>panel_genes_CL{2|3}.rds</code></li>
+            <li><b>Build:</b> fetch all panels, fetch genes per panel, save periodically</li>
+          </ol>
+          <div class="callout">
+            <b>Why this matters:</b> Tab 2 enrichment and Tab 5 gene/panel annotation can run
+            without repeated PanelApp calls after the first cache build.
+          </div>
+
+          <h3>3.5 Derived cache: gene → panels (green vs amber)</h3>
+          <p>
+            <code>build_gene_panel_index_from_panelgenes()</code> inverts panel→genes into gene→panels:
+          </p>
+          <ul>
+            <li><b>panels_green:</b> panels where gene is in CL=3 list</li>
+            <li><b>panels_amber:</b> panels where gene is in CL≥2 but not in CL=3 (amber-only)</li>
+          </ul>
+          <pre><code>ensure_gene_panel_index() loads from memory/disk or builds then saves:
+GENE_PANEL_INDEX in PANELAPP_CACHE_ENV
+gene_panel_index_from_panelgenes.rds on disk</code></pre>
+
+          <h3>3.6 Derived cache: gene/panel phenotype long table</h3>
+          <p>
+            <code>build_gene_panel_pheno_long()</code> fetches each panel’s <code>/genes/</code> endpoint and attempts to
+            extract phenotype fields into a “best effort” per-row phenotype string.
+          </p>
+          <pre><code>ensure_gene_panel_pheno_long() loads from memory/disk or builds then saves:
+GENE_PANEL_PHENO_LONG in PANELAPP_CACHE_ENV
+gene_panel_phenotypes_long.rds on disk</code></pre>
+
+          <h3>3.7 Reset function</h3>
+          <p>
+            <code>reset_panelapp_caches()</code> clears:
+          </p>
+          <ul>
+            <li>In-memory: removes all objects from <code>PANELAPP_CACHE_ENV</code></li>
+            <li>Disk: deletes panel gene caches, gene→panel index cache, phenotype cache</li>
+          </ul>
+        </section>
+
+        <section id="ui">
+          <h2>4. UI Structure (Tabs 2 / 5 / 6)</h2>
+
+          <pre><code>ui <- fluidPage(
+  shinyjs::useShinyjs(),
+  tabsetPanel(
+    tabPanel("Gene Enrichment Tool", ...),      // Tab 2
+    tabPanel("Discovery Panel Tool", ...),      // Tab 5
+    tabPanel("Network Explorer Tool", ...)      // Tab 6
+  )
+)</code></pre>
+
+          <h3>4.1 Tab 2 — Gene Enrichment Tool</h3>
+          <div class="kvs">
+            <div class="k"><b>Inputs</b></div>
+            <div>
+              <ul style="margin:0 0 0 18px">
+                <li>Upload gene table: <code>gene_file_tab3</code> (CSV/TSV/TXT/XLSX/XLS)</li>
+                <li>Column picker UI: <code>gene_col_ui</code> → <code>input$gene_col</code></li>
+                <li>Mode: <code>only_green</code> (CL=3 vs CL≥2)</li>
+                <li>Volcano settings: metric, alpha, symmetric xlim, point alpha</li>
+                <li>Buttons: <code>run_enrichment</code>, <code>tab2_reset_cache</code></li>
+                <li>GSEA settings + button: <code>tab2_run_gsea</code></li>
+              </ul>
+            </div>
+
+            <div class="k"><b>Outputs</b></div>
+            <div>
+              <ul style="margin:0 0 0 18px">
+                <li>Main enrichment bar plot: <code>enrichment_plot</code></li>
+                <li>Status text: <code>enrich_live_status</code></li>
+                <li>Volcano plot: <code>tab2_volcano</code></li>
+                <li>Heatmaps: <code>tab2_heatmap</code>, <code>tab2_panel_jaccard_heatmap</code></li>
+                <li>Results table: <code>enrichment_table</code></li>
+                <li>GSEA plot/table: <code>tab2_gsea_plot</code>, <code>tab2_gsea_table</code></li>
+                <li>Downloads: enrichment plot, volcano, heatmap, jaccard heatmap</li>
+              </ul>
+            </div>
+          </div>
+
+          <h3>4.2 Tab 5 — Discovery Panel Tool</h3>
+          <p>
+            Three “builders” (HPO-based, gene-list based, GO keyword-based), all annotated with PanelApp and (where available)
+            PanelApp phenotype terms from the shared phenotype index.
+          </p>
+
+          <h4>Inputs</h4>
+          <ul>
+            <li>HPO text input: <code>tab5_hpo_text</code> + button <code>tab5_build_hpo</code></li>
+            <li>Gene-list upload: <code>tab5_gene_file</code> + column picker <code>tab5_gene_col_ui</code> + button <code>tab5_build_gene</code></li>
+            <li>GO keyword input: <code>tab5_go_text</code>, aspect selector <code>tab5_go_aspect</code>, depth <code>tab5_go_child_depth</code> + button <code>tab5_build_go</code></li>
+            <li>Download: <code>tab5_download_all</code> (Excel)</li>
+          </ul>
+
+          <h4>Outputs</h4>
+          <ul>
+            <li>Status: <code>tab5_status_hpo</code>, <code>tab5_status_gene</code>, <code>tab5_status_go</code></li>
+            <li>“All genes before PanelApp filtering” boxes: <code>tab5_hpo_genes_all</code>, <code>tab5_go_genes_all</code></li>
+            <li>Final tables: <code>tab5_table_hpo</code>, <code>tab5_table_gene</code>, <code>tab5_table_go</code></li>
+          </ul>
+
+          <h3>4.3 Tab 6 — Network Explorer Tool</h3>
+          <h4>Inputs</h4>
+          <ul>
+            <li>Gene textarea: <code>tab6_gene_text</code></li>
+            <li>Run: <code>tab6_gene_run_btn</code></li>
+            <li>Download ZIP button exists in UI: <code>tab6_download_all</code> (not implemented in server in provided code)</li>
+          </ul>
+
+          <h4>Outputs</h4>
+          <ul>
+            <li>Status: <code>tab6_status_gene</code></li>
+            <li>Networks: <code>tab6_network_hpo</code>, <code>tab6_network_pheno</code>, <code>tab6_network_go</code></li>
+            <li>Summary DT: <code>tab6_table_summary</code></li>
+          </ul>
+
+          <div class="callout">
+            <b>Note:</b> Tab numbering in comments is legacy (e.g., “Tab 2 and 3 helper”). The actual UI exposes tabs:
+            “Gene Enrichment Tool”, “Discovery Panel Tool”, “Network Explorer Tool”.
+          </div>
+        </section>
+
+        <section id="helpers">
+          <h2>5. Helper Functions</h2>
+
+          <h3>5.1 File + column handling</h3>
+          <h4>smart_read_gene_table(path)</h4>
+          <ul>
+            <li>Reads CSV/TSV/TXT/XLSX/XLS with multiple fallback parsers</li>
+            <li>Tries to detect “header row mistakenly read as data” and promotes it</li>
+            <li>Trims all fields and drops empty columns</li>
+          </ul>
+
+          <h4>guess_gene_column(df)</h4>
+          <ul>
+            <li>First tries common gene column names</li>
+            <li>Else scores columns by “token-likeness” and uniqueness</li>
+          </ul>
+
+          <h3>5.2 HPO mapping (genes_to_phenotype)</h3>
+          <h4>load_hpo_genes_to_phenotype()</h4>
+          <ul>
+            <li>Loads locally from <code>genes_to_phenotype.txt</code> or <code>data/genes_to_phenotype.txt</code></li>
+            <li>Fallback downloads “latest release” from GitHub if not found locally</li>
+            <li>Normalizes column names and robustly locates required fields (HPO ID, HPO name, gene symbol)</li>
+            <li>Returns a list with:
+              <ul>
+                <li><code>hpo_gene_map</code>: long table (hpo_id, hpo_name, gene_symbol)</li>
+                <li><code>grouped</code>: HPO-level grouped gene list string</li>
+                <li><code>list_of_HPOs</code>: long form derived from grouped</li>
+              </ul>
+            </li>
+          </ul>
+
+          <h3>5.3 Volcano plotting</h3>
+          <h4>build_volcano_plot_like_python(df, column, significance_level, ...)</h4>
+          <ul>
+            <li>Uses odds ratio on x (log10), -log10(p/q) on y</li>
+            <li>Optional symmetric xlim around OR=1 (matches Python logic)</li>
+          </ul>
+          <div class="callout">
+            <b>In Tab 2 server</b> you also build a volcano plot manually (with labels for top 10 panels),
+            and you set colors via <code>scale_color_manual</code> (Significant=blue, Not Significant=red).
+          </div>
+
+          <h3>5.4 Tab 5 discovery helpers</h3>
+          <h4>normalize_hpo_id_token()</h4>
+          <ul>
+            <li>Normalizes messy HPO IDs into <code>HP:0000000</code> format where possible</li>
+          </ul>
+
+          <h4>annotate_genes_with_panelapp_tab5(genes, idx)</h4>
+          <ul>
+            <li>Given genes and a gene→panel index (with green/amber lists), returns counts and concatenated panel names</li>
+          </ul>
+
+          <h4>build_go_panel_tab5(keyword_vector, aspect, ...)</h4>
+          <ul>
+            <li>Local GO keyword search using Bioconductor packages:
+              <code>GO.db</code>, <code>org.Hs.eg.db</code>, <code>AnnotationDbi</code></li>
+            <li>Filters GO terms by ontology (BP/MF/CC)</li>
+            <li>Maps GO IDs to SYMBOL + evidence; can restrict evidence codes</li>
+            <li>Outputs:
+              <ul>
+                <li><code>go_terms</code>: matched GO terms</li>
+                <li><code>gene_summary</code>: per-gene GO summary string fields</li>
+                <li><code>annotations</code>: long annotation table</li>
+              </ul>
+            </li>
+          </ul>
+
+          <h3>5.5 Similarity matrix</h3>
+          <h4>build_jaccard_matrix(panel_gene_sets_named)</h4>
+          <ul>
+            <li>Computes Jaccard similarity for each panel pair</li>
+            <li>Used in Tab 2 “Panel similarity heatmap” based on input-gene overlaps</li>
+          </ul>
+        </section>
+
+        <section id="server">
+          <h2>6. Server Logic</h2>
+
+          <h3>6.1 Shared reactive state</h3>
+          <pre><code>// Tab 2
+enrich_store_tab2 <- reactiveValues(plot = NULL)
+tab2_extra_plots  <- reactiveValues(volcano=NULL, heatmap=NULL, jaccard=NULL, top_panels=character(0), top_n_panels=0L)
+panel_sets_rv     <- reactiveVal(NULL)   // named list: panel -> genes
+gene_df_rv        <- reactiveVal(NULL)   // uploaded gene table
+genes_rv          <- reactiveVal(NULL)   // cleaned gene vector
+
+// Shared Tab 5 + Tab 6
+panel_gene_pheno_long_rv <- reactiveVal(NULL) // cached phenotype long table</code></pre>
+
+          <h3>6.2 Shared phenotype index loader</h3>
+          <p>
+            <code>ensure_panel_gene_pheno_long()</code> (server-scoped) loads disk cache, upgrades old column names
+            (<code>phenotype</code> → <code>phenotype_term</code>), rebuilds if missing, and stores in <code>panel_gene_pheno_long_rv</code>.
+          </p>
+
+          <h3>6.3 Cache reset button (Tab 2)</h3>
+          <p>
+            <code>observeEvent(input$tab2_reset_cache, ...)</code> calls <code>reset_panelapp_caches()</code> and clears:
+          </p>
+          <ul>
+            <li>Tab 2 panel sets</li>
+            <li>Tab 5 panel index reactive (if present)</li>
+            <li>Tab 5/6 phenotype index reactive</li>
+          </ul>
+
+          <h3>6.4 Tab 2: upload + column picker</h3>
+          <ol>
+            <li>On <code>gene_file_tab3</code> upload: read via <code>smart_read_gene_table()</code></li>
+            <li>Choose gene column UI via <code>guess_gene_column()</code></li>
+            <li>Store in <code>gene_df_rv</code>, user selection in <code>input$gene_col</code></li>
+          </ol>
+
+          <h3>6.5 Tab 2: Run Enrichment</h3>
+          <p>
+            Trigger: <code>observeEvent(input$run_enrichment, ...)</code>
+          </p>
+          <div class="callout">
+            <b>Core pipeline:</b>
+            <ol style="margin:8px 0 0 18px">
+              <li>Validate gene table + chosen gene column</li>
+              <li>Clean gene symbols (uppercase, remove weird tokens)</li>
+              <li>Build/load PanelApp fallback cache for CL=3 or CL≥2</li>
+              <li>Compute Fisher exact test per panel (background N_BG, default 20000)</li>
+              <li>Adjust p-values (BH) to q-values</li>
+              <li>Render DT table of full results</li>
+              <li>Compute odds ratios (Haldane–Anscombe correction) + volcano plot (label top 10)</li>
+              <li>Compute membership heatmap (top 30 panels × query genes)</li>
+              <li>Compute Jaccard panel similarity heatmap (top panels, overlaps restricted to query genes)</li>
+              <li>Build main bar plot for “top enriched panels”</li>
+            </ol>
+          </div>
+
+          <h4>Tab 2: Downloads</h4>
+          <ul>
+            <li><code>dl_plot_tab2</code>: ggsave of bar plot</li>
+            <li><code>dl_tab2_volcano</code>: ggsave of volcano plot</li>
+            <li><code>dl_tab2_heatmap</code>: PNG device + pheatmap call</li>
+            <li><code>dl_tab2_panel_jaccard_heatmap</code>: dynamic PNG sizing based on number of top panels</li>
+          </ul>
+
+          <h3>6.6 Tab 2: GSEA module</h3>
+          <p>
+            Trigger: <code>observeEvent(input$tab2_run_gsea, ...)</code>
+          </p>
+          <ol>
+            <li>Reuses the uploaded gene table (<code>gene_df_rv()</code>)</li>
+            <li>Builds dynamic UI for gene column and numeric rank column</li>
+            <li>Creates a named numeric vector <code>rnk</code> (stats per gene), collapsing duplicates by mean</li>
+            <li>Fetches gene sets via <code>msigdbr</code> and runs <code>fgsea::fgsea()</code></li>
+            <li>Stores results + pathways + ranks in reactives</li>
+            <li>Plots top pathway using <code>fgsea::plotEnrichment()</code> and renders a results DT</li>
+          </ol>
+
+          <h3>6.7 Tab 5: Discovery Panels</h3>
+          <h4>Shared resources</h4>
+          <ul>
+            <li><code>ensure_tab5_hpo_data()</code>: loads genes_to_phenotype via helper</li>
+            <li><code>ensure_tab5_panel_index()</code>: loads gene→panel index via <code>ensure_gene_panel_index()</code></li>
+            <li><code>ensure_panel_gene_pheno_long()</code>: loads PanelApp phenotype index</li>
+          </ul>
+
+          <h4>Tab 5 workflow A — HPO-based</h4>
+          <ol>
+            <li>Parse HPO text into tokens (IDs vs names)</li>
+            <li>Match IDs exactly and names by substring against <code>hpo_gene_map</code></li>
+            <li>Summarize to per-gene HPO IDs and names (also stores “all genes before PanelApp filtering”)</li>
+            <li>Annotate genes with PanelApp panel membership (green/amber counts and names)</li>
+            <li>Filter to genes present in PanelApp</li>
+            <li>Add “All PanelApp phenotypes” per gene from phenotype long index</li>
+            <li>Render DT + status text</li>
+          </ol>
+
+          <h4>Tab 5 workflow B — Gene-list based</h4>
+          <ol>
+            <li>Upload gene table + choose column</li>
+            <li>Annotate genes with HPO IDs/names via <code>hpo_gene_map</code></li>
+            <li>Annotate PanelApp panels via gene→panel index</li>
+            <li>Add “All PanelApp phenotypes” via phenotype long index</li>
+            <li>Render DT + status text</li>
+          </ol>
+
+          <h4>Tab 5 workflow C — GO keyword based (local GO.db)</h4>
+          <ol>
+            <li>Parse GO keyword tokens</li>
+            <li>Build GO-based gene list via <code>build_go_panel_tab5()</code></li>
+            <li>Store “all GO genes before PanelApp filtering”</li>
+            <li>Annotate PanelApp panels and PanelApp phenotypes</li>
+            <li>Render DT + status text</li>
+          </ol>
+
+          <h4>Tab 5 downloads</h4>
+          <p>
+            <code>tab5_download_all</code> produces a multi-sheet Excel with:
+            HPO-based panel, Gene-list panel, GO-based panel, HPO genes-all, GO genes-all.
+          </p>
+
+          <h3>6.8 Tab 6: Network Explorer</h3>
+          <p>
+            Trigger: <code>observeEvent(input$tab6_gene_run_btn, ...)</code>
+          </p>
+          <div class="callout">
+            <b>Core idea:</b> Given a gene list, compute terms shared by ≥2 genes (threshold fixed as <code>min_shared_genes = 2</code>)
+            across:
+            <ul style="margin:8px 0 0 18px">
+              <li>HPO IDs (from genes_to_phenotype.txt)</li>
+              <li>PanelApp phenotype terms (from phenotype long index)</li>
+              <li>GO terms (from local GO.db/org.Hs.eg.db mapping)</li>
+            </ul>
+          </div>
+
+          <h4>Tab 6 phases</h4>
+          <ol>
+            <li>Disable run button via shinyjs while processing</li>
+            <li>Load HPO map (<code>tab6_load_hpo_map()</code>)</li>
+            <li>Load GO map once (<code>tab6_load_go_map()</code>) and attach GO names via GO.db</li>
+            <li>Load PanelApp phenotype index (<code>ensure_panel_gene_pheno_long()</code>)</li>
+            <li>Compute shared sets and edges</li>
+            <li>Build nodes for Gene / HPO / GO / Phenotype groups</li>
+            <li>Apply explicit orbit layout (<code>tab6_layout_nodes_orbit()</code>)</li>
+            <li>Render 3 separate networks in visNetwork</li>
+            <li>Compute graph metrics with igraph (<code>compute_net_stats()</code>) for:
+              combined graph + each subgraph (HPO-only, phenotype-only, GO-only)</li>
+            <li>Build summary DT combining:
+              HPO list, PanelApp phenotypes list, GO list, and per-gene metrics</li>
+            <li>Write a long status text with counts + metrics</li>
+          </ol>
+
+          <div class="callout">
+            <b>Dependency note:</b> Tab 6 uses <code>igraph</code> but it is not loaded in the global library calls shown.
+            If igraph is not attached elsewhere, you should add <code>library(igraph)</code> (or use <code>igraph::</code> everywhere).
+          </div>
+
+          <div class="callout">
+            <b>Download note:</b> The UI includes <code>downloadButton("tab6_download_all")</code> but the provided server code
+            does not define a <code>downloadHandler</code> for it yet.
+          </div>
+        </section>
+
+        <section id="flows">
+          <h2>7. Data Flow Maps</h2>
+
+          <h3>7.1 Shared caches</h3>
+          <pre><code>PanelApp API
+  -> get_all_panels_min()
+  -> get_panel_genes(panel_id, include_amber)
+  -> get_panel_genes_fallback_conf(min_conf=2 or 3)
+       -> disk: panel_genes_CL2.rds / panel_genes_CL3.rds
+       -> mem : PANELAPP_CACHE_ENV$PANEL_GENES_CL{2|3}
+
+Derived:
+  -> build_gene_panel_index_from_panelgenes()
+       -> disk: gene_panel_index_from_panelgenes.rds
+       -> mem : PANELAPP_CACHE_ENV$GENE_PANEL_INDEX
+
+Derived:
+  -> build_gene_panel_pheno_long()
+       -> disk: gene_panel_phenotypes_long.rds
+       -> mem : PANELAPP_CACHE_ENV$GENE_PANEL_PHENO_LONG</code></pre>
+
+          <h3>7.2 Tab 2 enrichment</h3>
+          <pre><code>Upload gene table -> smart_read_gene_table()
+  -> select gene column -> genes_rv()
+  -> get_panel_genes_fallback_conf(CL=3 or CL≥2)
+  -> per panel: Fisher exact test (a,b,c,d with N_BG)
+  -> p_value + q_value + odds_ratio
+  -> Outputs:
+       - DT table (full results)
+       - bar plot (top enriched)
+       - volcano plot (label top 10)
+       - membership heatmap (top panels × query genes)
+       - panel similarity heatmap (Jaccard)</code></pre>
+
+          <h3>7.3 Tab 5 discovery panels</h3>
+          <pre><code>HPO text
+  -> load_hpo_genes_to_phenotype() -> hpo_gene_map
+  -> match by ID and name substring
+  -> genes
+  -> annotate via ensure_gene_panel_index()
+  -> add PanelApp phenotypes via ensure_panel_gene_pheno_long()
+
+Gene-list upload
+  -> genes -> HPO lookup -> PanelApp annotation -> phenotype augmentation
+
+GO keywords
+  -> build_go_panel_tab5() (local GO.db/org.Hs.eg.db)
+  -> genes -> PanelApp annotation -> phenotype augmentation</code></pre>
+
+          <h3>7.4 Tab 6 network</h3>
+          <pre><code>Gene text -> parse genes
+  -> HPO map (genes_to_phenotype) -> shared HPO IDs
+  -> PanelApp phenotype long index -> shared phenotype terms
+  -> GO map (local) -> shared GO terms
+  -> Build 3 networks:
+       Gene-HPO, Gene-Phenotype, Gene-GO
+  -> Combine for metrics:
+       igraph degree, betweenness, clustering, k-core
+       communities: fast-greedy, Louvain, Infomap
+  -> Render:
+       3 visNetwork graphs + DT summary</code></pre>
+        </section>
+
+        <section id="ops">
+          <h2>8. Operational Notes & Gotchas</h2>
+
+          <h3>8.1 Background size (N_BG)</h3>
+          <p>
+            Enrichment uses a fixed background universe size <code>N_BG</code> (default <code>20000</code>).
+            This affects the Fisher contingency table via the computed <code>d</code> cell:
+            <code>d = max(0, N_BG - (a + b + c))</code>.
+          </p>
+
+          <h3>8.2 PanelApp rate limiting</h3>
+          <p>
+            <code>pa_get_with_retry()</code> handles 429 with retry-after when available; otherwise it uses exponential backoff.
+            Cache building can still take time on first run (one request per panel plus pagination).
+          </p>
+
+          <h3>8.3 Mixed helper definitions</h3>
+          <p>
+            <code>TRIM</code> and <code>%||%</code> are defined multiple times. That’s fine, but consider consolidating to one block.
+          </p>
+
+          <h3>8.4 Missing/partial features</h3>
+          <ul>
+            <li>UI includes <code>tab6_download_all</code>, but server handler is not present in the provided code.</li>
+            <li>Tab 6 uses <code>igraph</code> namespaced calls, but make sure the package exists and is available.</li>
+            <li>Several packages are loaded that aren’t used in the shown portion (common in multi-tab apps).</li>
+          </ul>
+
+          <div class="callout">
+            <b>Recommendation (safe refactor):</b> Split into <code>global.R</code> (cache + helpers),
+            <code>ui.R</code>, <code>server.R</code> to reduce redefinition and improve maintainability.
+            The current code already has clear boundaries (TOP / CACHE / UI / HELPERS / SERVER).
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+</body>
+</html>
