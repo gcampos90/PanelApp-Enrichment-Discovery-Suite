@@ -1,135 +1,249 @@
-# PanelApp-Enrichment-Discovery-Suite (Shiny)
+# PanelApp Enrichment Suite
 
-A multi-tab **R Shiny** application for:
-- **Panel enrichment** of a user gene list against **Genomics England PanelApp** panels (Fisher’s exact test + FDR),
-- **Discovery panel building** from **HPO terms/IDs**, **gene lists**, or **GO keyword searches**,
-- **Network exploration** of shared **HPO**, **GO**, and **PanelApp phenotype** relationships across genes,
-- Optional **GSEA** (fgsea) using **MSigDB** collections via msigdbr.
+A Shiny application for analysing gene lists against Genomics England PanelApp Green genes and generating discovery panels from user-supplied genes, Human Phenotype Ontology (HPO) terms, or Gene Ontology (GO) annotations.
 
-This app is designed for interactive gene list interpretation and rapid iteration. It includes a **universal caching layer** (memory + disk) to avoid repeatedly downloading panel content from PanelApp.
+---
+
+## Overview
+
+The PanelApp Green-Gene Analysis Suite provides two complementary tools:
+
+### 1. Panel Enrichment Tool
+
+Performs enrichment testing to answer the question: 
+- Which disease categories (panels) are most enriched for given gene list ?
+
+Features:
+
+- Automatic retrieval of all Green genes from PanelApp
+- Local caching of PanelApp data for faster subsequent analyses
+- Fisher's Exact Test enrichment analysis
+- Benjamini-Hochberg FDR correction
+- Enrichment bar plots
+- Gene-panel membership heatmaps
+- Export of results as CSV, Excel, and PNG
+
+### 2. Discovery Panel Tool
+
+Builds candidate disease gene panels based on:
+
+- Uploaded gene lists
+- Human Phenotype Ontology (HPO) terms or IDs
+- Gene Ontology (GO) keywords
+
+Results are intersected with all Green PanelApp panels to identify known disease-relevant genes and associated phenotypes.
 
 ---
 
 ## Features
 
-### Tab 2 — Gene Enrichment Tool
-Upload a gene table (CSV/TSV/TXT/XLSX/XLS) with a gene symbol column and optionally numeric columns.
+### PanelApp Integration
 
-**Outputs**
-- **Enrichment bar plot** of top enriched panels
-- **Enrichment results table** with hits, p-values, q-values (BH/FDR)
-- **Volcano plot** (odds ratio vs -log10 p/q) with label options
-- **Heatmap** of panel membership across input genes (top panels)
-- **Panel similarity heatmap** (Jaccard similarity computed over overlaps with the input gene set)
+- Retrieves live panel information through the Genomics England PanelApp API
+- Uses Green genes only (confidence level 3)
+- Automatically caches datasets locally
+- Supports manual cache refresh
 
-**Enrichment approach**
-For each PanelApp panel:
-- Compute overlap between input genes and panel genes.
-- Run **Fisher’s exact test** (greater) against a configurable background universe size (`N_BG`, default 20,000).
-- Adjust p-values using **Benjamini–Hochberg** to get **q-values (FDR)**.
+### Gene List Support
 
-**Green-only vs Green+Amber**
-- Toggle between **Green-only** (confidence level CL=3) and **Green+Amber** (CL≥2) panel gene sets.
+Accepted file formats:
 
----
+- CSV (`.csv`)
+- TSV (`.tsv`)
+- TXT (`.txt`)
+- Excel (`.xlsx`)
+- Excel (`.xls`)
 
-### Tab 2 — GSEA (optional)
-Run gene set enrichment on a ranked gene list using:
-- `fgsea` for enrichment
-- `msigdbr` for MSigDB gene sets
+The application automatically attempts to identify the gene symbol column.
 
-Collections supported:
-- Hallmark (H)
-- C2 Canonical Pathways (CP)
-- C5 GO Biological Process (BP)
+### HPO Discovery
 
----
+Supports:
 
-### Tab 5 — Discovery Panel Tool
-Build and annotate candidate panels using three modes:
+- HPO identifiers (`HP:0001250`)
+- HPO terms (`Seizures`, `Retinal dystrophy`, etc.)
 
-#### (1) HPO-based discovery panel
-Paste:
-- HPO IDs (e.g. `HP:0001250`) and/or
-- HPO text terms (e.g. "epilepsy", "developmental delay")
+Gene annotations are obtained from the official Human Phenotype Ontology phenotype-to-gene annotation database.
 
-The app maps HPO → genes using **HPO genes_to_phenotype** (`genes_to_phenotype.txt`), then annotates resulting genes with:
-- PanelApp panels (Green + Amber and Green-only indexing)
-- PanelApp phenotype terms (where available from PanelApp endpoints)
+### GO Discovery
 
-#### (2) Gene-list discovery panel
-Upload a gene list and annotate genes with:
-- HPO IDs and HPO names
-- PanelApp panels (Green vs Amber-only)
-- PanelApp phenotypes
+Supports Gene Ontology searches in:
 
-#### (3) GO-based discovery panel (local Bioconductor)
-Enter GO keyword(s) (e.g. “circadian rhythm”, “chronotype”) and choose GO aspect:
-- Biological process (BP)
-- Molecular function (MF)
-- Cellular component (CC)
+- Biological Process (BP)
+- Molecular Function (MF)
+- Cellular Component (CC)
 
-This uses local Bioconductor annotation databases:
-- `GO.db`
-- `org.Hs.eg.db`
-- `AnnotationDbi`
+Genes are retrieved using:
 
-and filters to evidence codes (configurable; defaults include EXP/IDA/IMP/etc).
-
-**Downloads**
-Tab 5 can export all discovery results to a single Excel file.
+- GO.db
+- org.Hs.eg.db
 
 ---
 
-### Tab 6 — Network Explorer Tool
-Paste gene symbols to generate networks of **shared annotations** (default: terms shared by ≥2 genes):
-- Gene–HPO network (shared HPO IDs)
-- Gene–Phenotype network (PanelApp phenotype terms shared)
-- Gene–GO network (shared GO terms)
+## Workflow
 
-Outputs:
-- Interactive `visNetwork` plots
-- Per-gene summary table (HPOs, PanelApp phenotypes, GO terms)
-- Graph-level metrics (nodes/edges, clustering, communities via igraph)
+### Panel Enrichment Tool
+
+1. Upload a gene list.
+2. Select the gene-symbol column.
+3. Run enrichment analysis.
+4. Review:
+   - Enriched panels
+   - FDR-adjusted significance
+   - Overlapping genes
+   - Membership heatmap
+5. Export results.
+
+### Discovery Panel Tool
+
+1. Choose an input type:
+   - Uploaded gene list
+   - HPO terms/IDs
+   - GO keywords
+2. Generate the discovery panel.
+3. Review:
+   - Green PanelApp overlap
+   - Associated panels
+   - Disease phenotypes
+4. Export the final panel.
 
 ---
 
-## Data sources
+## Statistical Method
 
-### PanelApp (Genomics England)
-The app pulls panel and gene information from the public PanelApp API:
-- Base: `https://panelapp.genomicsengland.co.uk/api/v1`
-- Endpoints used include:
-  - `/panels/` (panel list)
-  - `/panels/{id}/genes/` (panel genes; filtered by confidence)
+Panel enrichment is calculated using:
 
-The app includes retry logic for:
-- HTTP 429 (rate limit)
-- 5xx server errors
-- transient network errors
+- Fisher's Exact Test (one-sided)
+- Background universe consisting of all Green PanelApp genes
+- Benjamini-Hochberg False Discovery Rate (FDR) correction
 
-### HPO genes_to_phenotype
-The app uses `genes_to_phenotype.txt`:
-- Local file supported (`./genes_to_phenotype.txt` or `./data/genes_to_phenotype.txt`)
-- If not found locally, it can download from the HPO GitHub releases:
-  - `https://github.com/obophenotype/human-phenotype-ontology/releases/latest/download/genes_to_phenotype.txt`
+For each panel the application reports:
 
-### GO annotations (local)
-GO discovery uses Bioconductor databases:
-- `GO.db`
-- `org.Hs.eg.db`
-- `AnnotationDbi`
-
-### MSigDB gene sets (optional)
-GSEA uses:
-- `msigdbr` to access MSigDB collections
-- `fgsea` to run enrichment
+- Odds ratio
+- P-value
+- FDR-adjusted q-value
+- Number of overlapping genes
+- Overlapping gene symbols
 
 ---
 
 ## Installation
 
-### 1) Clone the repository
-```bash
-git clone https://github.com/<your-org-or-user>/<repo-name>.git
-cd <repo-name>
+### CRAN Packages
+
+```r
+install.packages(c(
+  "shiny",
+  "DT",
+  "httr",
+  "jsonlite",
+  "dplyr",
+  "tibble",
+  "purrr",
+  "stringr",
+  "readxl",
+  "readr",
+  "ggplot2",
+  "pheatmap",
+  "scales",
+  "writexl"
+))
+```
+
+### Bioconductor Packages
+
+```r
+if (!requireNamespace("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+
+BiocManager::install(c(
+  "AnnotationDbi",
+  "GO.db",
+  "org.Hs.eg.db"
+))
+```
+
+---
+
+## Running the Application
+
+```r
+shiny::runApp("app.R")
+```
+
+or simply:
+
+```r
+source("app.R")
+```
+
+if running interactively from RStudio.
+
+---
+
+## Output Files
+
+### Panel Enrichment
+
+- Enrichment results (CSV)
+- Enrichment results (Excel)
+- Bar plot (PNG)
+- Membership heatmap (PNG)
+
+### Discovery Tool
+
+- Discovery panel (CSV)
+- Discovery panel (Excel)
+
+Excel exports include supplementary worksheets containing:
+
+- Input genes
+- HPO matches (when applicable)
+- GO matches (when applicable)
+- Gene-to-term associations
+
+---
+
+## Data Sources
+
+### Genomics England PanelApp
+
+https://panelapp.genomicsengland.co.uk/
+
+### Human Phenotype Ontology
+
+https://hpo.jax.org/
+
+### Gene Ontology
+
+http://geneontology.org/
+
+### Bioconductor Annotation Packages
+
+- GO.db
+- org.Hs.eg.db
+- AnnotationDbi
+
+---
+
+## Notes
+
+- Only Green PanelApp genes (confidence level 3) are used.
+- Initial cache generation may take several minutes because all PanelApp panels are downloaded.
+- Subsequent analyses are significantly faster due to local caching.
+- The cache can be manually refreshed from the application interface.
+
+---
+
+## Intended Use
+
+This tool is intended for:
+
+Research support only and should not be used as the sole basis for clinical decision-making.
+
+---
+
+## Author
+
+Guilherme Fernandes Campos
+Developed for genomic panel exploration, enrichment analysis, and discovery panel generation using Genomics England PanelApp resources.
